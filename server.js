@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import axios from "axios";
 
 dotenv.config();
 
@@ -19,61 +20,75 @@ app.get("/", (req, res) => {
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
 
-  // 🔥 Multiple models (fallback strategy)
-  const models = [
-    "gemini-flash-latest",
-    "gemini-pro"
-  ];
+  // 🔁 Gemini first
+  const models = ["gemini-flash-latest", "gemini-pro"];
 
-  //  Retry attempts
-  let attempts = 2;
+  for (let i = 0; i < models.length; i++) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: models[i],
+      });
 
-  while (attempts > 0) {
-    for (let i = 0; i < models.length; i++) {
-      try {
-        const model = genAI.getGenerativeModel({
-          model: models[i],
-        });
-
-        const result = await model.generateContent([
-          {
-            text: `
+      const result = await model.generateContent([
+        {
+          text: `
 You are an AI assistant for Dheeraj Srivastava.
 
 Details:
 - Full Stack Developer (React, Node.js, MongoDB)
-- Projects:
-  1. Medico (Medicine Reminder App)
-  2. Profile Management App
-- Skills: JavaScript, React, Node.js, MongoDB
-
-Answer professionally and help recruiters understand his profile.
 
 User question: ${message}
 `,
-          },
-        ]);
+        },
+      ]);
 
-        const response = result.response.text();
+      const response = result.response.text();
 
-        return res.json({ reply: response });
+      return res.json({ reply: response });
 
-      } catch (error) {
-        console.log(` Model ${models[i]} failed:`, error.status || error.message);
-      }
+    } catch (error) {
+      console.log(`❌ Gemini ${models[i]} failed`);
     }
-
-    attempts--;
-
-    // ⏳ wait before retry
-    await new Promise((resolve) => setTimeout(resolve, 2000));
   }
 
+  //  FINAL FALLBACK → OpenRouter
+  try {
+    const response = await axios.post(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        model: "openai/gpt-3.5-turbo",
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are an AI assistant for Dheeraj Srivastava (Full Stack Developer).",
+          },
+          {
+            role: "user",
+            content: message,
+          },
+        ],
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
 
-  return res.json({
-    reply:
-      "⚠️ AI is currently under heavy load. \n\nDheeraj is a Full Stack Developer skilled in React, Node.js, and MongoDB.\n\nPlease try again in a few seconds 🙌",
-  });
+    const reply = response.data.choices[0].message.content;
+
+    return res.json({ reply });
+
+  } catch (error) {
+    console.log(" OpenRouter also failed");
+
+    return res.json({
+      reply:
+        "⚠️ AI services are temporarily unavailable. Please try again later.",
+    });
+  }
 });
 
 app.listen(5000, () => console.log("Server running on port 5000"));
