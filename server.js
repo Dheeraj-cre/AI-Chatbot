@@ -2,7 +2,6 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import axios from "axios";
 
 dotenv.config();
 
@@ -12,7 +11,7 @@ app.use(express.json());
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Health route
+
 app.get("/", (req, res) => {
   res.send("AI Chatbot Backend Running 🚀");
 });
@@ -20,15 +19,14 @@ app.get("/", (req, res) => {
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
 
-  // 🔁 Gemini first
-  const models = ["gemini-flash-latest", "gemini-pro"];
+  const model = genAI.getGenerativeModel({
+    model: "gemini-flash-latest",
+  });
 
-  for (let i = 0; i < models.length; i++) {
+  let attempts = 3;
+
+  while (attempts > 0) {
     try {
-      const model = genAI.getGenerativeModel({
-        model: models[i],
-      });
-
       const result = await model.generateContent([
         {
           text: `
@@ -36,6 +34,12 @@ You are an AI assistant for Dheeraj Srivastava.
 
 Details:
 - Full Stack Developer (React, Node.js, MongoDB)
+- Projects:
+  1. Medico (Medicine Reminder App)
+  2. Profile Management App
+- Skills: JavaScript, React, Node.js, MongoDB
+
+Answer professionally and help recruiters understand his profile.
 
 User question: ${message}
 `,
@@ -47,47 +51,19 @@ User question: ${message}
       return res.json({ reply: response });
 
     } catch (error) {
-      console.log(`❌ Gemini ${models[i]} failed`);
-    }
-  }
+      console.log("Retry attempt failed:", error.status || error.message);
 
-  //  FINAL FALLBACK → OpenRouter
-  try {
-    const response = await axios.post(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        model: "openai/gpt-3.5-turbo",
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are an AI assistant for Dheeraj Srivastava (Full Stack Developer).",
-          },
-          {
-            role: "user",
-            content: message,
-          },
-        ],
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          "Content-Type": "application/json",
-        },
+      attempts--;
+
+      // ⏳ wait 2 sec before retry
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      if (attempts === 0) {
+        return res.json({
+          reply: "⚠️ AI is busy right now. Please try again in a few seconds.",
+        });
       }
-    );
-
-    const reply = response.data.choices[0].message.content;
-
-    return res.json({ reply });
-
-  } catch (error) {
-    console.log(" OpenRouter also failed");
-
-    return res.json({
-      reply:
-        "⚠️ AI services are temporarily unavailable. Please try again later.",
-    });
+    }
   }
 });
 
