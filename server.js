@@ -11,16 +11,25 @@ app.use(express.json());
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+
+app.get("/", (req, res) => {
+  res.send("AI Chatbot Backend Running 🚀");
+});
+
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
 
-  try {
-const model = genAI.getGenerativeModel({
-  model: "gemini-flash-latest"
-});
-    const result = await model.generateContent([
-      {
-        text: `
+  const model = genAI.getGenerativeModel({
+    model: "gemini-flash-latest",
+  });
+
+  let attempts = 3;
+
+  while (attempts > 0) {
+    try {
+      const result = await model.generateContent([
+        {
+          text: `
 You are an AI assistant for Dheeraj Srivastava.
 
 Details:
@@ -33,17 +42,28 @@ Details:
 Answer professionally and help recruiters understand his profile.
 
 User question: ${message}
-`
+`,
+        },
+      ]);
+
+      const response = result.response.text();
+
+      return res.json({ reply: response });
+
+    } catch (error) {
+      console.log("Retry attempt failed:", error.status || error.message);
+
+      attempts--;
+
+      // ⏳ wait 2 sec before retry
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      if (attempts === 0) {
+        return res.json({
+          reply: "⚠️ AI is busy right now. Please try again in a few seconds.",
+        });
       }
-    ]);
-
-    const response = result.response.text();
-
-    res.json({ reply: response });
-
-  } catch (error) {
-    console.log(error);
-    res.status(500).json({ error: "Something went wrong" });
+    }
   }
 });
 
