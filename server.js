@@ -11,7 +11,7 @@ app.use(express.json());
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-
+// Health route
 app.get("/", (req, res) => {
   res.send("AI Chatbot Backend Running 🚀");
 });
@@ -19,17 +19,25 @@ app.get("/", (req, res) => {
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
 
-  const model = genAI.getGenerativeModel({
-    model: "gemini-flash-latest",
-  });
+  // 🔥 Multiple models (fallback strategy)
+  const models = [
+    "gemini-flash-latest",
+    "gemini-pro"
+  ];
 
-  let attempts = 3;
+  //  Retry attempts
+  let attempts = 2;
 
   while (attempts > 0) {
-    try {
-      const result = await model.generateContent([
-        {
-          text: `
+    for (let i = 0; i < models.length; i++) {
+      try {
+        const model = genAI.getGenerativeModel({
+          model: models[i],
+        });
+
+        const result = await model.generateContent([
+          {
+            text: `
 You are an AI assistant for Dheeraj Srivastava.
 
 Details:
@@ -43,28 +51,29 @@ Answer professionally and help recruiters understand his profile.
 
 User question: ${message}
 `,
-        },
-      ]);
+          },
+        ]);
 
-      const response = result.response.text();
+        const response = result.response.text();
 
-      return res.json({ reply: response });
+        return res.json({ reply: response });
 
-    } catch (error) {
-      console.log("Retry attempt failed:", error.status || error.message);
-
-      attempts--;
-
-      // ⏳ wait 2 sec before retry
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      if (attempts === 0) {
-        return res.json({
-          reply: "⚠️ AI is busy right now. Please try again in a few seconds.",
-        });
+      } catch (error) {
+        console.log(` Model ${models[i]} failed:`, error.status || error.message);
       }
     }
+
+    attempts--;
+
+    // ⏳ wait before retry
+    await new Promise((resolve) => setTimeout(resolve, 2000));
   }
+
+
+  return res.json({
+    reply:
+      "⚠️ AI is currently under heavy load. \n\nDheeraj is a Full Stack Developer skilled in React, Node.js, and MongoDB.\n\nPlease try again in a few seconds 🙌",
+  });
 });
 
 app.listen(5000, () => console.log("Server running on port 5000"));
